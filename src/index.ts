@@ -4,11 +4,13 @@ import { z } from "zod/v4";
 
 import { getDatabaseConfig } from "./config.js";
 import {
-  customers,
-  findCustomerById,
-  findTicketsForCustomer,
-  tickets
-} from "./data.js";
+  getBoardResource,
+  getBoardTasks,
+  getRowBoardId,
+  listBoards,
+  searchBoards,
+  testDatabaseConnection
+} from "./db.js";
 
 const databaseConfig = getDatabaseConfig();
 
@@ -37,85 +39,124 @@ server.registerTool(
           dbPort: databaseConfig.port,
           dbName: databaseConfig.name,
           dbUser: databaseConfig.user,
-          customersTable: databaseConfig.customersTable,
-          ticketsTable: databaseConfig.ticketsTable
+          boardsTable: databaseConfig.boardsTable,
+          tasksTable: databaseConfig.tasksTable
         })
       }
     ]
   })
 );
 
-server.registerResource(
-  "customers-overview",
-  "crm://customers",
+server.registerTool(
+  "test_database_connection",
   {
-    title: "Customers Overview",
-    description: "Dummy customer records for local MCP testing",
+    title: "Test Database Connection",
+    description: "Check that the server can connect to the configured MySQL database"
+  },
+  async () => {
+    const ok = await testDatabaseConnection();
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: ok ? "Database connection successful" : "Database connection failed"
+        }
+      ]
+    };
+  }
+);
+
+server.registerResource(
+  "boards-overview",
+  "boards://boards",
+  {
+    title: "Boards Overview",
+    description: "Read boards from the configured boards table",
     mimeType: "application/json"
   },
   async () => ({
     contents: [
       {
-        uri: "crm://customers",
+        uri: "boards://boards",
         mimeType: "application/json",
-        text: toJson(customers)
+        text: toJson(await listBoards(25))
       }
     ]
   })
 );
 
 server.registerResource(
-  "open-tickets",
-  "crm://tickets/open",
-  {
-    title: "Open Tickets",
-    description: "Dummy open and pending tickets for local MCP testing",
-    mimeType: "application/json"
-  },
-  async () => ({
-    contents: [
-      {
-        uri: "crm://tickets/open",
-        mimeType: "application/json",
-        text: toJson(tickets.filter((ticket) => ticket.status !== "closed"))
-      }
-    ]
-  })
-);
+  "board-detail",
+  new ResourceTemplate("boards://boards/{boardId}", {
+    list: async () => {
+      const boards = await listBoards(25);
 
-server.registerResource(
-  "customer-detail",
-  new ResourceTemplate("crm://customers/{customerId}", {
-    list: async () => ({
-      resources: customers.map((customer) => ({
-        name: `${customer.company} (${customer.id})`,
-        uri: `crm://customers/${customer.id}`,
-        mimeType: "application/json",
-        description: `${customer.status} customer on the ${customer.plan} plan`
-      }))
-    })
+      return {
+        resources: boards
+          .map((board) => {
+            const id = getRowBoardId(board);
+
+            if (id === undefined || id === null) {
+              return null;
+            }
+
+            return {
+              name: String(board.title ?? board.name ?? `Board ${id}`),
+              uri: `boards://boards/${id}`,
+              mimeType: "application/json",
+              description: `Board record from ${databaseConfig.boardsTable}`
+            };
+          })
+          .filter((resource): resource is NonNullable<typeof resource> => Boolean(resource))
+      };
+    }
   }),
   {
-    title: "Customer Detail",
-    description: "Read a single dummy customer record by id",
+    title: "Board Detail",
+    description: "Read one board by id from the configured boards table",
     mimeType: "application/json"
   },
   async (_uri, variables) => {
-    const customerId = String(variables.customerId);
-    const customer = findCustomerById(customerId);
+    const boardId = String(variables.boardId);
+    const board = await getBoardResource(boardId);
 
-    if (!customer) {
-      throw new Error(`Customer not found: ${customerId}`);
+    if (!board) {
+      throw new Error(`Board not found: ${boardId}`);
     }
 
     return {
       contents: [
         {
-          uri: `crm://customers/${customerId}`,
+          uri: `boards://boards/${boardId}`,
           mimeType: "application/json",
+          text: toJson(board)
+        }
+      ]
+    };
+  }
+);
+
+server.registerTool(
+  "list_boards",
+  {
+    title: "List Boards",
+    description: "Return boards from the configured boards table",
+    inputSchema: {
+      limit: z.number().int().min(1).max(200).optional().describe("Maximum rows to return")
+    }
+  },
+  async ({ limit = 100 }) => {
+    const boards = await listBoards(limit);
+
+    return {
+      content: [
+        {
+          type: "text",
           text: toJson({
-            ...customer,
-            tickets: findTicketsForCustomer(customerId)
+            table: databaseConfig.boardsTable,
+            count: boards.length,
+            boards
           })
         }
       ]
@@ -124,91 +165,26 @@ server.registerResource(
 );
 
 server.registerTool(
-  "list_customers",
+  "search_boards",
   {
-    title: "List Customers",
-    description: "Return dummy customer data, optionally filtered by status",
+    title: "Search Boards",
+    description: "Search records in the configured boards table",
     inputSchema: {
-      status: z.enum(["active", "trial", "churned"]).optional()
-    },
-    outputSchema: {
-      customers: z.array(
-        z.object({
-          id: z.string(),
-          name: z.string(),
-          company: z.string(),
-          status: z.enum(["active", "trial", "churned"]),
-          plan: z.enum(["starter", "growth", "enterprise"]),
-          monthlyRevenueUsd: z.number(),
-          healthScore: z.number()
-        })
-      ),
-      total: z.number()
+      query: z.string().describe("Free-text board search term"),
+      limit: z.number().int().min(1).max(100).optional().describe("Maximum rows to return")
     }
   },
-  async ({ status }) => {
-    const filteredCustomers = status
-      ? customers.filter((customer) => customer.status === status)
-      : customers;
-
-    const structuredContent = {
-      customers: filteredCustomers.map((customer) => ({
-        id: customer.id,
-        name: customer.name,
-        company: customer.company,
-        status: customer.status,
-        plan: customer.plan,
-        monthlyRevenueUsd: customer.monthlyRevenueUsd,
-        healthScore: customer.healthScore
-      })),
-      total: filteredCustomers.length
-    };
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: toJson(structuredContent)
-        }
-      ],
-      structuredContent
-    };
-  }
-);
-
-server.registerTool(
-  "get_customer_summary",
-  {
-    title: "Get Customer Summary",
-    description: "Return one dummy customer plus their related tickets",
-    inputSchema: {
-      customerId: z.string().describe("Customer id, for example cust_001")
-    }
-  },
-  async ({ customerId }) => {
-    const customer = findCustomerById(customerId);
-
-    if (!customer) {
-      return {
-        isError: true,
-        content: [
-          {
-            type: "text",
-            text: `Customer not found: ${customerId}`
-          }
-        ]
-      };
-    }
-
-    const relatedTickets = findTicketsForCustomer(customerId);
+  async ({ query, limit = 20 }) => {
+    const boards = await searchBoards(query, limit);
 
     return {
       content: [
         {
           type: "text",
           text: toJson({
-            customer,
-            tickets: relatedTickets
+            table: databaseConfig.boardsTable,
+            count: boards.length,
+            boards
           })
         }
       ]
@@ -217,29 +193,29 @@ server.registerTool(
 );
 
 server.registerTool(
-  "search_tickets",
+  "get_board_tasks",
   {
-    title: "Search Tickets",
-    description: "Search dummy support tickets by subject text",
+    title: "Get Board Tasks",
+    description: "Return tasks for a single board from the configured tasks table",
     inputSchema: {
-      query: z.string().describe("Free-text search term"),
-      status: z.enum(["open", "pending", "closed"]).optional()
+      boardId: z.union([z.string(), z.number()]).describe("Board id from the boards table"),
+      limit: z.number().int().min(1).max(200).optional().describe("Maximum tasks to return")
     }
   },
-  async ({ query, status }) => {
-    const normalizedQuery = query.trim().toLowerCase();
-
-    const matches = tickets.filter((ticket) => {
-      const matchesQuery = ticket.subject.toLowerCase().includes(normalizedQuery);
-      const matchesStatus = status ? ticket.status === status : true;
-      return matchesQuery && matchesStatus;
-    });
+  async ({ boardId, limit = 100 }) => {
+    const result = await getBoardTasks(boardId, limit);
 
     return {
       content: [
         {
           type: "text",
-          text: toJson(matches)
+          text: toJson({
+            table: databaseConfig.tasksTable,
+            boardId,
+            boardColumn: result.boardColumn,
+            count: result.tasks.length,
+            tasks: result.tasks
+          })
         }
       ]
     };
@@ -247,32 +223,26 @@ server.registerTool(
 );
 
 server.registerPrompt(
-  "customer-brief",
+  "board-summary",
   {
-    title: "Customer Brief",
-    description: "Create a reusable prompt for analyzing a dummy customer account",
+    title: "Board Summary",
+    description: "Create a reusable prompt for reviewing a board and its task backlog",
     argsSchema: {
-      customerId: z.string()
+      boardId: z.string()
     }
   },
-  async ({ customerId }) => {
-    const customer = findCustomerById(customerId);
-
-    return {
-      description: `Analysis prompt for ${customerId}`,
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: customer
-              ? `Review customer ${customer.name} at ${customer.company}. Focus on account health, ticket risk, and next-best actions.`
-              : `Review customer ${customerId}. If the customer cannot be found, explain that clearly.`
-          }
+  async ({ boardId }) => ({
+    description: `Analysis prompt for board ${boardId}`,
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: `Review board ${boardId}. Summarize the board's current status, important tasks, blockers, and recommended next actions.`
         }
-      ]
-    };
-  }
+      }
+    ]
+  })
 );
 
 async function main() {

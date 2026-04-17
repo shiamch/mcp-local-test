@@ -1,19 +1,35 @@
 # fbs-local-mcp
 
-A small local MCP server built with the TypeScript SDK and seeded with dummy CRM-style data.
+A local MCP server for querying WordPress-backed Fluent Boards style data from MySQL.
 
 ## What it exposes
 
 - Resources:
-  - `crm://customers`
-  - `crm://tickets/open`
-  - `crm://customers/{customerId}`
+  - `boards://boards`
+  - `boards://boards/{boardId}`
 - Tools:
-  - `list_customers`
-  - `get_customer_summary`
-  - `search_tickets`
+  - `get_server_config`
+  - `test_database_connection`
+  - `list_boards`
+  - `search_boards`
+  - `get_board_tasks`
 - Prompt:
-  - `customer-brief`
+  - `board-summary`
+
+## Environment variables
+
+Copy [.env.example](/Users/shiamchowdhury/Documents/projects/mcp-test/fbs-local-mcp/.env.example) to `.env` for local development, or add the same keys in the Codex MCP form.
+
+The server now auto-loads `.env` and `.env.local` from the project root on startup. Precedence is: Codex MCP form environment variables first, then `.env.local`, then `.env`.
+
+- `DB_CLIENT`
+- `DB_HOST`
+- `DB_PORT`
+- `DB_NAME`
+- `DB_USER`
+- `DB_PASSWORD`
+- `DB_BOARDS_TABLE`
+- `DB_TASKS_TABLE`
 
 ## Build and run
 
@@ -26,28 +42,19 @@ Important: build the server before connecting it to an MCP client. The MCP runti
 
 ## Add it to Codex app
 
-1. Build the project:
+Use `STDIO` with:
 
-```bash
-cd /Users/shiamchowdhury/Documents/projects/mcp-test/fbs-local-mcp
-pnpm build
-```
+- Command: `node`
+- Argument: `dist/index.js`
+- Working directory: `/Users/shiamchowdhury/Documents/projects/mcp-test/fbs-local-mcp`
 
-2. Add a local MCP server entry in your Codex app config using this command:
+Add these environment variables in the Codex form:
 
-```json
-{
-  "mcpServers": {
-    "fbs-local-mcp": {
-      "command": "node",
-      "args": [
-        "/Users/shiamchowdhury/Documents/projects/mcp-test/fbs-local-mcp/dist/index.js"
-      ]
-    }
-  }
-}
-```
-
-3. Reload the Codex app or refresh MCP servers.
-
-After that, Codex should see the server's tools, resources, and prompt.
+- `DB_CLIENT=mysql`
+- `DB_HOST=127.0.0.1`
+- `DB_PORT=3306`
+- `DB_NAME=wordpress`
+- `DB_USER=readonly_user`
+- `DB_PASSWORD=replace_me`
+- `DB_BOARDS_TABLE=wp_fbs_boards`
+- `DB_TASKS_TABLE=wp_fbs_tasks`

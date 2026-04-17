@@ -8,6 +8,7 @@ import {
   getBoardTasks,
   getRowBoardId,
   listBoards,
+  listCampaigns,
   searchBoards,
   testDatabaseConnection
 } from "./db.js";
@@ -40,7 +41,8 @@ server.registerTool(
           dbName: databaseConfig.name,
           dbUser: databaseConfig.user,
           boardsTable: databaseConfig.boardsTable,
-          tasksTable: databaseConfig.tasksTable
+          tasksTable: databaseConfig.tasksTable,
+          campaignsTable: databaseConfig.campaignsTable
         })
       }
     ]
@@ -157,6 +159,39 @@ server.registerTool(
             table: databaseConfig.boardsTable,
             count: boards.length,
             boards
+          })
+        }
+      ]
+    };
+  }
+);
+
+server.registerTool(
+  "list_campaigns",
+  {
+    title: "List Campaigns",
+    description: "Return campaigns filtered by status from the configured campaigns table",
+    inputSchema: {
+      statuses: z
+        .array(z.enum(["published", "working", "archived"]))
+        .optional()
+        .describe("Campaign statuses to include"),
+      limit: z.number().int().min(1).max(200).optional().describe("Maximum rows to return")
+    }
+  },
+  async ({ statuses = ["published", "working", "archived"], limit = 100 }) => {
+    const result = await listCampaigns(statuses, limit);
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: toJson({
+            table: databaseConfig.campaignsTable,
+            statusColumn: result.statusColumn,
+            statuses,
+            count: result.campaigns.length,
+            campaigns: result.campaigns
           })
         }
       ]

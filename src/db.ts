@@ -75,6 +75,14 @@ function pickBoardIdColumn(columns: string[]): string | undefined {
   ]);
 }
 
+function pickCampaignStatusColumn(columns: string[]): string | undefined {
+  return pickExistingColumn(columns, [
+    "status",
+    "campaign_status",
+    "post_status"
+  ]);
+}
+
 export function getRowBoardId(row: Row): string | number | undefined {
   const candidates = ["id", "board_id", "boardId", "boardid", "fbs_board_id"];
 
@@ -188,4 +196,34 @@ export async function listBoards(limit: number) {
 
   const [rows] = await pool.query<mysql.RowDataPacket[]>(sql, [limit]);
   return rows as Row[];
+}
+
+export async function listCampaigns(
+  statuses: string[],
+  limit: number
+) {
+  const columns = await getTableColumns(config.campaignsTable);
+  const statusColumn = pickCampaignStatusColumn(columns);
+
+  if (!statusColumn) {
+    throw new Error(
+      `Could not find a campaign status column in ${config.campaignsTable}. Tried: status, campaign_status, post_status`
+    );
+  }
+
+  const placeholders = statuses.map(() => "?").join(", ");
+  const sql = `
+    SELECT *
+    FROM ${escapeIdentifier(config.campaignsTable)}
+    WHERE ${escapeIdentifier(statusColumn)} IN (${placeholders})
+    ORDER BY 1 DESC
+    LIMIT ?
+  `;
+
+  const [rows] = await pool.query<mysql.RowDataPacket[]>(sql, [...statuses, limit]);
+
+  return {
+    statusColumn,
+    campaigns: rows as Row[]
+  };
 }

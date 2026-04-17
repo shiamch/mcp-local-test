@@ -66,6 +66,7 @@ export function getDatabaseConfig() {
     user: readEnv("DB_USER", "readonly_user"),
     password: readEnv("DB_PASSWORD", "replace_me"),
     boardsTable: readEnv("DB_BOARDS_TABLE", "wp_fbs_boards"),
-    tasksTable: readEnv("DB_TASKS_TABLE", "wp_fbs_tasks")
+    tasksTable: readEnv("DB_TASKS_TABLE", "wp_fbs_tasks"),
+    campaignsTable: readEnv("DB_CAMPAIGNS_TABLE", "wp_fc_campaigns")
   };
 }

@@ -4,11 +4,13 @@ import { z } from "zod/v4";
 
 import { getDatabaseConfig } from "./config.js";
 import {
+  createTag,
   getBoardResource,
   getBoardTasks,
   getRowBoardId,
   listBoards,
   listCampaigns,
+  listTags,
   searchBoards,
   testDatabaseConnection
 } from "./db.js";
@@ -42,7 +44,8 @@ server.registerTool(
           dbUser: databaseConfig.user,
           boardsTable: databaseConfig.boardsTable,
           tasksTable: databaseConfig.tasksTable,
-          campaignsTable: databaseConfig.campaignsTable
+          campaignsTable: databaseConfig.campaignsTable,
+          tagsTable: databaseConfig.tagsTable
         })
       }
     ]
@@ -159,6 +162,66 @@ server.registerTool(
             table: databaseConfig.boardsTable,
             count: boards.length,
             boards
+          })
+        }
+      ]
+    };
+  }
+);
+
+server.registerTool(
+  "list_tags",
+  {
+    title: "List Tags",
+    description: "Return tags from the configured tags table",
+    inputSchema: {
+      limit: z.number().int().min(1).max(200).optional().describe("Maximum rows to return")
+    }
+  },
+  async ({ limit = 100 }) => {
+    const tags = await listTags(limit);
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: toJson({
+            table: databaseConfig.tagsTable,
+            count: tags.length,
+            tags
+          })
+        }
+      ]
+    };
+  }
+);
+
+server.registerTool(
+  "create_tag",
+  {
+    title: "Create Tag",
+    description: "Create a new tag in the configured tags table",
+    inputSchema: {
+      name: z.string().min(1).describe("Tag name"),
+      slug: z.string().min(1).optional().describe("Optional tag slug"),
+      type: z.string().min(1).optional().describe("Optional tag type")
+    }
+  },
+  async ({ name, slug, type }) => {
+    const result = await createTag({
+      name,
+      ...(slug ? { slug } : {}),
+      ...(type ? { type } : {})
+    });
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: toJson({
+            table: databaseConfig.tagsTable,
+            insertedId: result.insertedId,
+            tag: result.tag
           })
         }
       ]

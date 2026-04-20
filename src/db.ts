@@ -83,6 +83,34 @@ function pickCampaignStatusColumn(columns: string[]): string | undefined {
   ]);
 }
 
+function pickTagNameColumn(columns: string[]): string | undefined {
+  return pickExistingColumn(columns, [
+    "title",
+    "name",
+    "label"
+  ]);
+}
+
+function pickTagSlugColumn(columns: string[]): string | undefined {
+  return pickExistingColumn(columns, ["slug"]);
+}
+
+function pickTagTypeColumn(columns: string[]): string | undefined {
+  return pickExistingColumn(columns, ["type"]);
+}
+
+function pickTagIdColumn(columns: string[]): string | undefined {
+  return pickExistingColumn(columns, ["id", "tag_id", "tagId"]);
+}
+
+function slugifyTagName(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 export function getRowBoardId(row: Row): string | number | undefined {
   const candidates = ["id", "board_id", "boardId", "boardid", "fbs_board_id"];
 
@@ -225,5 +253,92 @@ export async function listCampaigns(
   return {
     statusColumn,
     campaigns: rows as Row[]
+  };
+}
+
+export async function listTags(limit: number) {
+  const sql = `
+    SELECT *
+    FROM ${escapeIdentifier(config.tagsTable)}
+    ORDER BY 1 DESC
+    LIMIT ?
+  `;
+
+  const [rows] = await pool.query<mysql.RowDataPacket[]>(sql, [limit]);
+  return rows as Row[];
+}
+
+export async function createTag(input: {
+  name: string;
+  slug?: string;
+  type?: string;
+}) {
+  const columns = await getTableColumns(config.tagsTable);
+  const tagIdColumn = pickTagIdColumn(columns);
+  const tagNameColumn = pickTagNameColumn(columns);
+  const tagSlugColumn = pickTagSlugColumn(columns);
+  const tagTypeColumn = pickTagTypeColumn(columns);
+  const createdAtColumn = pickExistingColumn(columns, ["created_at"]);
+  const updatedAtColumn = pickExistingColumn(columns, ["updated_at"]);
+
+  if (!tagNameColumn) {
+    throw new Error(
+      `Could not find a tag name column in ${config.tagsTable}. Tried: title, name, label`
+    );
+  }
+
+  const valuesByColumn = new Map<string, unknown>();
+  valuesByColumn.set(tagNameColumn, input.name);
+
+  if (tagSlugColumn) {
+    valuesByColumn.set(tagSlugColumn, input.slug ?? slugifyTagName(input.name));
+  }
+
+  if (tagTypeColumn) {
+    valuesByColumn.set(tagTypeColumn, input.type ?? "custom");
+  }
+
+  const now = new Date();
+
+  if (createdAtColumn) {
+    valuesByColumn.set(createdAtColumn, now);
+  }
+
+  if (updatedAtColumn) {
+    valuesByColumn.set(updatedAtColumn, now);
+  }
+
+  const insertColumns = Array.from(valuesByColumn.keys());
+  const insertValues = Array.from(valuesByColumn.values()) as Array<string | number | Date>;
+  const placeholders = insertColumns.map(() => "?").join(", ");
+
+  const insertSql = `
+    INSERT INTO ${escapeIdentifier(config.tagsTable)} (${insertColumns
+      .map((column) => escapeIdentifier(column))
+      .join(", ")})
+    VALUES (${placeholders})
+  `;
+
+  const [result] = await pool.execute<mysql.ResultSetHeader>(insertSql, insertValues);
+
+  if (!tagIdColumn) {
+    return {
+      insertedId: result.insertId,
+      tag: null
+    };
+  }
+
+  const selectSql = `
+    SELECT *
+    FROM ${escapeIdentifier(config.tagsTable)}
+    WHERE ${escapeIdentifier(tagIdColumn)} = ?
+    LIMIT 1
+  `;
+
+  const [rows] = await pool.query<mysql.RowDataPacket[]>(selectSql, [result.insertId]);
+
+  return {
+    insertedId: result.insertId,
+    tag: (rows[0] as Row | undefined) ?? null
   };
 }

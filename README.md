@@ -11,6 +11,8 @@ A local MCP server for querying WordPress-backed Fluent Boards style data from M
   - `get_server_config`
   - `test_database_connection`
   - `list_boards`
+  - `list_tags`
+  - `create_tag`
   - `list_campaigns`
   - `search_boards`
   - `get_board_tasks`
@@ -32,6 +34,7 @@ The server now auto-loads `.env` and `.env.local` from the project root on start
 - `DB_BOARDS_TABLE`
 - `DB_TASKS_TABLE`
 - `DB_CAMPAIGNS_TABLE`
+- `DB_TAGS_TABLE`
 
 ## Build and run
 
@@ -61,3 +64,4 @@ Add these environment variables in the Codex form:
 - `DB_BOARDS_TABLE=wp_fbs_boards`
 - `DB_TASKS_TABLE=wp_fbs_tasks`
 - `DB_CAMPAIGNS_TABLE=wp_fc_campaigns`
+- `DB_TAGS_TABLE=wp_fc_tags`
